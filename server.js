@@ -67,9 +67,8 @@ const questionResultAnalysis = (roomCode, questionIndex) => {
     let answeredCount = 0;
     let correctCount = 0;
     for (let i = 0; i < rooms[roomIndex].players.length; i++) {
-        if (rooms[roomIndex].players[i].answers[questionIndex] !== null) {
+        if (rooms[roomIndex].players[i].answers[questionIndex] !== undefined) {
             answeredCount += 1;
-
             if (rooms[roomIndex].players[i].answers[questionIndex] === rooms[roomIndex].processedQuiz.answers[questionIndex]){
                 correctCount += 1;
             }
@@ -78,6 +77,25 @@ const questionResultAnalysis = (roomCode, questionIndex) => {
     return {
         answeredCount: answeredCount,
         correctCount: correctCount,
+    }
+}
+
+const quizResultAnalysis = (roomCode) => {
+    let roomIndex = getRoomIndexByRoomCode(roomCode);
+    let maxResult = {preferredName: rooms[roomIndex].players[0].preferredName,score: rooms[roomIndex].players[0].score}
+    let minResult = {preferredName: rooms[roomIndex].players[0].preferredName,score: rooms[roomIndex].players[0].score}
+    let sum = 0;
+    for (let i = 0; i < rooms[roomIndex].players.length; i++) {
+        sum += rooms[roomIndex].players[i].score;
+        if (rooms[roomIndex].players[i].score > maxResult.score)
+            maxResult = {preferredName: rooms[roomIndex].players[i].preferredName, score: rooms[roomIndex].players[i].score};
+        if (rooms[roomIndex].players[i].score < minResult.score)
+            minResult = {preferredName: rooms[roomIndex].players[i].preferredName, score: rooms[roomIndex].players[i].score};
+    }
+    return {
+        max: maxResult,
+        min: minResult,
+        avg: sum / rooms[roomIndex].players.length,
     }
 }
 
@@ -129,17 +147,17 @@ io.on('connection', (socket) => {
                 },
                 roomCode: newRoomCode,
                 currentQuestionIndex: -1,
-                state: 'wait', //Four available states: wait, preview, open, close
+                state: 'wait', //Five available states: wait, preview, open, close, finish
                 players: [],
             });
             socket.emit('server-to-host', {
-                message: 'create-room-request',
+                message: 'create-room-response',
                 roomCode: newRoomCode,
                 quizName: req.quiz.name,
             })
 
-            logRoomsStatus();
-            console.log(`Room ${newRoomCode} is created`);
+            console.log(`Create room request received.`);
+            console.log('Request accepted. ' + newRoomCode + ' is created.');
         }
         if (req.message === 'preview-question-request'){
             let roomIndex = getRoomIndexByRoomCode(req.roomCode);
@@ -186,7 +204,6 @@ io.on('connection', (socket) => {
                 questionID: rooms[roomIndex].currentQuestionIndex
             })
 
-            logRoomsStatus();
             console.log(`Preview question request from ${req.roomCode} received.`);
             console.log('Request accepted');
         }
@@ -257,44 +274,23 @@ io.on('connection', (socket) => {
                     success: false,
                     failureReason: failureReason,
                 })
-                console.log(`Open question request from ${req.roomCode} received.`);
+                console.log(`Close question request from ${req.roomCode} received.`);
                 console.log(`Request denied. ${failureReason}`);
                 return;
             }
             rooms[roomIndex].state = 'close';
 
             for (let i = 0; i < rooms[roomIndex].players.length; i++) {
-                console.log(rooms[roomIndex].players[i].answers[rooms[roomIndex].currentQuestionIndex], rooms[roomIndex].processedQuiz.answers[rooms[roomIndex].currentQuestionIndex])
                 if (rooms[roomIndex].players[i].answers[rooms[roomIndex].currentQuestionIndex] === rooms[roomIndex].processedQuiz.answers[rooms[roomIndex].currentQuestionIndex]) {
                     rooms[roomIndex].players[i].score += 1;
                 }
             }
 
-            let maxResult = {preferredName: rooms[roomIndex].players[0].preferredName,score: rooms[roomIndex].players[0].score}
-            let minResult = {preferredName: rooms[roomIndex].players[0].preferredName,score: rooms[roomIndex].players[0].score}
-            let sum = 0;
-            for (let i = 0; i < rooms[roomIndex].players.length; i++) {
-                sum += rooms[roomIndex].players[i].score;
-                if (rooms[roomIndex].players[i].score > maxResult.score)
-                    maxResult = {preferredName: rooms[roomIndex].players[i].preferredName, score: rooms[roomIndex].players[i].score};
-                if (rooms[roomIndex].players[i].score < minResult.score)
-                    minResult = {preferredName: rooms[roomIndex].players[i].preferredName, score: rooms[roomIndex].players[i].score};
-            }
-
-
-
-
-
             socket.emit('server-to-host', {
                 message: 'close-question-response',
                 players: rooms[roomIndex].players,
                 questionAnalysis: questionResultAnalysis(req.roomCode, rooms[roomIndex].currentQuestionIndex),
-                quizAnalysis: {
-                    max: maxResult,
-                    min: minResult,
-                    avg: sum / rooms[roomIndex].players.length,
-                },
-                finish: rooms[roomIndex].currentQuestionIndex === rooms[roomIndex].quiz.questions.length -1
+                lastQuestion: rooms[roomIndex].currentQuestionIndex === rooms[roomIndex].quiz.questions.length -1
             })
 
             for (let i = 0; i < rooms[roomIndex].players.length; i++) {
@@ -304,7 +300,95 @@ io.on('connection', (socket) => {
                     score: rooms[roomIndex].players[i].score
                 })
             }
+            console.log(`Close question request from ${req.roomCode} received.`);
+            console.log(`Request accepted.`);
+        }
+        if (req.message === 'quiz-result-request') {
+            let roomIndex = getRoomIndexByRoomCode(req.roomCode);
+            let validRequest = false;
+            let failureReason = '';
+            if (roomIndex !== -1){
+                if (rooms[roomIndex].hostSocketID === socket.id){
+                    if (rooms[roomIndex].state === 'close' && rooms[roomIndex].currentQuestionIndex === rooms[roomIndex].quiz.questions.length - 1) {
+                        validRequest = true;
+                    } else {
+                        failureReason = 'Invalid game state.'
+                    }
+                } else{
+                    failureReason = 'Socket requesting is not the host.'
+                }
+            } else {
+                failureReason = 'Room code not found.'
+            }
+            if (!validRequest){
+                socket.emit('server-to-host', {
+                    message: 'quiz-result-response',
+                    success: false,
+                    failureReason: failureReason,
+                })
+                console.log(`Quiz result request from ${req.roomCode} received.`);
+                console.log(`Request denied. ${failureReason}`);
+                return;
+            }
+            rooms[roomIndex].state = 'finish';
+            socket.emit('server-to-host', {
+                message: 'quiz-result-response',
+                quizAnalysis: quizResultAnalysis(req.roomCode)
+            })
 
+            for (let i = 0; i < rooms[roomIndex].players.length; i++) {
+                socket.to(rooms[roomIndex].players[i].socketID).emit('server-to-client', {
+                    message: 'quiz-result-notification',
+                    quizAnalysis: {
+                        numOfQuestions: rooms[roomIndex].quiz.questions.length,
+                        score: rooms[roomIndex].players[i].score,
+                        average: quizResultAnalysis(req.roomCode).avg,
+                    }
+                })
+            }
+            console.log(`Quiz result request from ${req.roomCode} received.`);
+            console.log(`Request accepted.`);
+        }
+        if (req.message === 'terminate-quiz-request') {
+            let roomIndex = getRoomIndexByRoomCode(req.roomCode);
+            let validRequest = false;
+            let failureReason = '';
+            if (roomIndex !== -1){
+                if (rooms[roomIndex].hostSocketID === socket.id){
+                    if (rooms[roomIndex].state === 'finish') {
+                        validRequest = true;
+                    } else {
+                        failureReason = 'Invalid game state.'
+                    }
+                } else{
+                    failureReason = 'Socket requesting is not the host.'
+                }
+            } else {
+                failureReason = 'Room code not found.'
+            }
+            if (!validRequest){
+                socket.emit('server-to-host', {
+                    message: 'terminate-quiz-response',
+                    success: false,
+                    failureReason: failureReason,
+                })
+                console.log(`Quiz termination request from ${req.roomCode} received.`);
+                console.log(`Request denied. ${failureReason}`);
+                return;
+            }
+            socket.emit('server-to-host', {
+                message: 'terminate-quiz-response',
+                success: true,
+            })
+
+            socket.to(req.roomCode).emit('server-to-client', {
+                message: 'terminate-quiz-notification',
+            })
+            io.socketsLeave(req.roomCode);
+            rooms = rooms.filter(room => room.roomCode != req.roomCode);
+
+            console.log(`Quiz termination request from ${req.roomCode} received.`);
+            console.log(`Request accepted.`);
         }
     });
     socket.on('client-to-server', req => {
@@ -317,8 +401,8 @@ io.on('connection', (socket) => {
                     success: false,
                 })
 
-                logRoomsStatus();
-                console.log(`Socket ${socket.id} fails to join room ${req.roomCode}`);
+                console.log(`Join room request from ${req.roomCode} received.`);
+                console.log(`Request denied. Room code not found.`);
                 return;
             }
             socket.join(req.roomCode);
@@ -339,10 +423,10 @@ io.on('connection', (socket) => {
                 quizName: rooms[roomIndex].quiz.name,
                 player: rooms[roomIndex].players[getPlayerIndexBySocketIDAndRoomCode(rooms[roomIndex].roomCode, socket.id)]
             })
-
-            logRoomsStatus();
-            console.log(`Socket ${socket.id} successfully joins room ${req.roomCode}`);
+            console.log(`Join room request from ${req.roomCode} received.`);
+            console.log(`Request accepted.`);
         }
+
         if (req.message === 'answer-question-request') {
             let roomIndex = getRoomIndexByRoomCode(req.roomCode);
             let validRequest = false;
@@ -356,7 +440,7 @@ io.on('connection', (socket) => {
                     }
                 }
                 if (playerSocketIndex !== -1) {
-                    if (rooms[roomIndex].players[playerSocketIndex].answers[rooms[roomIndex].currentQuestionIndex] === null){
+                    if (rooms[roomIndex].players[playerSocketIndex].answers[rooms[roomIndex].currentQuestionIndex] === undefined){
                         if (rooms[roomIndex].state === 'open'){
                             validRequest = true;
                         }else {
@@ -379,8 +463,9 @@ io.on('connection', (socket) => {
                     success: false,
                     failureReason: failureReason
                 })
-                console.log('Request for question answering received.');
+                console.log(`Question answer request from ${req.roomCode} received.`);
                 console.log(`Request denied. ${failureReason}`);
+                return;
             }
             rooms[roomIndex].players[playerSocketIndex].answers[rooms[roomIndex].currentQuestionIndex] = req.playerAnswer;
             socket.emit('server-to-client', {
@@ -392,7 +477,20 @@ io.on('connection', (socket) => {
                 players: rooms[roomIndex].players,
                 questionAnalysis: questionResultAnalysis(req.roomCode, rooms[roomIndex].currentQuestionIndex)
             })
+            console.log(`Question answer request from ${req.roomCode} received.`);
+            console.log(`Request accepted. ${failureReason}`);
 
+        }
+    });
+    socket.on("disconnect", reason => {
+        zombieRooms = rooms.filter(room => room.hostSocketID === socket.id);
+        for (let  i = 0; i < zombieRooms.length; i++) {
+            socket.to(zombieRooms[i].roomCode).emit('server-to-host', {
+                message: 'host-disconnected-notification',
+            })
+            io.socketsLeave(zombieRooms[i].roomCode);
+            rooms = rooms.filter(room => room.roomCode != zombieRooms[i].roomCode);
+            console.log(`Room ${zombieRooms[i].roomCode} is terminated due to host disconnection.`)
         }
     })
 });
