@@ -288,6 +288,7 @@ io.on('connection', (socket) => {
 
             socket.emit('server-to-host', {
                 message: 'close-question-response',
+                success: true,
                 players: rooms[roomIndex].players,
                 questionAnalysis: questionResultAnalysis(req.roomCode, rooms[roomIndex].currentQuestionIndex),
                 lastQuestion: rooms[roomIndex].currentQuestionIndex === rooms[roomIndex].quiz.questions.length -1
@@ -333,6 +334,7 @@ io.on('connection', (socket) => {
             rooms[roomIndex].state = 'finish';
             socket.emit('server-to-host', {
                 message: 'quiz-result-response',
+                success: true,
                 quizAnalysis: quizResultAnalysis(req.roomCode)
             })
 
