@@ -245,6 +245,7 @@ io.on('connection', (socket) => {
                 message: 'open-question-notification',
                 question: rooms[roomIndex].processedQuiz.questions[rooms[roomIndex].currentQuestionIndex],
                 options: rooms[roomIndex].processedQuiz.options[rooms[roomIndex].currentQuestionIndex],
+                questionID: rooms[roomIndex].currentQuestionIndex,
             })
             logRoomsStatus();
             console.log(`Open question request from ${req.roomCode} received.`);
@@ -335,7 +336,8 @@ io.on('connection', (socket) => {
             socket.emit('server-to-host', {
                 message: 'quiz-result-response',
                 success: true,
-                quizAnalysis: quizResultAnalysis(req.roomCode)
+                quizAnalysis: quizResultAnalysis(req.roomCode),
+                numOfQuestions: rooms[roomIndex].quiz.questions.length
             })
 
             for (let i = 0; i < rooms[roomIndex].players.length; i++) {
