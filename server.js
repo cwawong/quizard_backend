@@ -82,6 +82,13 @@ const questionResultAnalysis = (roomCode, questionIndex) => {
 
 const quizResultAnalysis = (roomCode) => {
     let roomIndex = getRoomIndexByRoomCode(roomCode);
+    if (rooms[roomIndex].players.length === 0){
+        return {
+            max: {preferredName: 'Not available',score: 0},
+            min: {preferredName: 'Not available',score: 0},
+            avg: 0,
+        }
+    }
     let maxResult = {preferredName: rooms[roomIndex].players[0].preferredName,score: rooms[roomIndex].players[0].score}
     let minResult = {preferredName: rooms[roomIndex].players[0].preferredName,score: rooms[roomIndex].players[0].score}
     let sum = 0;
