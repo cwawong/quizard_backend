@@ -365,13 +365,9 @@ io.on('connection', (socket) => {
             let validRequest = false;
             let failureReason = '';
             if (roomIndex !== -1){
-                if (rooms[roomIndex].hostSocketID === socket.id){
-                    if (rooms[roomIndex].state === 'finish') {
-                        validRequest = true;
-                    } else {
-                        failureReason = 'Invalid game state.'
-                    }
-                } else{
+                if (rooms[roomIndex].hostSocketID === socket.id) {
+                    validRequest = true;
+                } else {
                     failureReason = 'Socket requesting is not the host.'
                 }
             } else {
